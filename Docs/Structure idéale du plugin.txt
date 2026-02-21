@@ -1,0 +1,222 @@
+🏗 Structure idéale du plugin
+
+Nom :
+leadbridge
+
+Structure :
+
+leadbridge/
+│
+├── leadbridge.php
+├── includes/
+│   ├── class-leadbridge-core.php
+│   ├── class-leadbridge-sender.php
+│   ├── class-leadbridge-logger.php
+│   ├── class-leadbridge-utils.php
+│
+└── config/
+    └── endpoints.php
+
+1️⃣ Fichier principal : leadbridge.php
+
+Il charge les classes et initialise le système.
+
+<?php
+/**
+ * Plugin Name: LeadBridge
+ * Description: Orchestrateur de leads multi-endpoints.
+ * Version: 1.0
+ */
+
+if (!defined('ABSPATH')) exit;
+
+require_once plugin_dir_path(__FILE__) . 'includes/class-leadbridge-core.php';
+
+new LeadBridge_Core();
+
+2️⃣ Core : Hook avec Fluent Forms
+
+Fluent Forms déclenche :
+
+add_action('fluentform_submission_inserted', function($entryId, $formData, $form) {
+
+    LeadBridge_Core::handle_submission($form->id, $formData);
+
+}, 10, 3);
+
+
+On ne dépend pas du nom des champs visuels.
+On dépend des slugs Fluent Forms.
+
+3️⃣ Configuration centralisée par site
+
+Dans config/endpoints.php :
+
+return [
+
+    1 => [ // ID du formulaire Fluent
+        'dashboard_url' => 'https://dashboard.webylead.com/api/XXXX',
+        'bridge_url'    => 'http://app.webylead.com/prospect/devis-XXX',
+
+        'mapping' => [
+            'nom'      => 'Nom',
+            'prenom'   => 'Prénom',
+            'email'    => 'Email',
+            'telephone'=> 'Téléphone',
+            'cp'       => 'CP',
+        ],
+
+        'fixed_fields' => [
+            'utm_source' => 'Affiliation'
+        ]
+    ]
+
+];
+
+
+Chaque site aura son propre fichier config.
+Aucun code métier dupliqué.
+
+4️⃣ Classe Sender (transport HTTP propre)
+
+On utilise wp_remote_post.
+
+class LeadBridge_Sender {
+
+    public static function send($url, $payload) {
+
+        $response = wp_remote_post($url, [
+            'body' => $payload,
+            'timeout' => 15,
+            'headers' => [
+                'Content-Type' => 'application/x-www-form-urlencoded'
+            ]
+        ]);
+
+        if (is_wp_error($response)) {
+            return ['ok' => false, 'error' => $response->get_error_message()];
+        }
+
+        return [
+            'ok' => wp_remote_retrieve_response_code($response) >= 200 
+                    && wp_remote_retrieve_response_code($response) < 300,
+            'code' => wp_remote_retrieve_response_code($response),
+            'body' => wp_remote_retrieve_body($response)
+        ];
+    }
+}
+
+5️⃣ Logger JSONL (comme ton meilleur site actuel)
+
+Fichier :
+wp-content/uploads/leadbridge.log
+
+class LeadBridge_Logger {
+
+    public static function log($target, $payload, $result) {
+
+        $record = [
+            'ts' => current_time('c'),
+            'target' => $target,
+            'payload' => self::mask($payload),
+            'result' => $result
+        ];
+
+        $file = wp_upload_dir()['basedir'] . '/leadbridge.log';
+
+        file_put_contents(
+            $file,
+            json_encode($record, JSON_UNESCAPED_UNICODE) . PHP_EOL,
+            FILE_APPEND | LOCK_EX
+        );
+    }
+
+    private static function mask($payload) {
+        if (isset($payload['Email'])) {
+            $payload['Email'] = substr($payload['Email'], 0, 3) . '***';
+        }
+        return $payload;
+    }
+}
+
+
+Traçabilité = puissance.
+
+6️⃣ Gestion spéciale (ex : resolve_city IGN)
+
+Dans class-leadbridge-utils.php
+
+Même logique que ton ancien code, mais isolée :
+
+class LeadBridge_Utils {
+
+    public static function resolve_city($cp) {
+
+        if (!preg_match('/^\d{5}$/', $cp)) {
+            return 'Non précisée';
+        }
+
+        $response = wp_remote_get(
+            'https://apicarto.ign.fr/api/codes-postaux/communes/' . $cp,
+            ['timeout' => 8]
+        );
+
+        if (is_wp_error($response)) return 'Non précisée';
+
+        $data = json_decode(wp_remote_retrieve_body($response), true);
+
+        return $data[0]['nomCommune'] ?? 'Non précisée';
+    }
+}
+
+🔐 Sécurité minimale obligatoire
+
+Ajoute :
+
+Honeypot Fluent Forms
+
+reCAPTCHA
+
+Limite de soumissions par IP
+
+Validation stricte email/téléphone
+
+Vérification domaine referrer si nécessaire
+
+Un lead system attire les bots comme le miel attire les fourmis.
+
+🚀 Vision long terme
+
+Tu peux ajouter plus tard :
+
+Retry automatique si HTTP != 200
+
+File d’attente WP-Cron
+
+Interface admin pour voir les erreurs
+
+Envoi Slack en cas d’échec
+
+Signature HMAC des payloads
+
+Identifiant unique par lead
+
+À ce moment-là, tu n’as plus un plugin.
+Tu as une mini-plateforme de routing.
+
+🎯 Résumé stratégique
+
+Fluent Forms = interface utilisateur
+LeadBridge = cerveau
+Endpoints = configuration
+
+Séparation claire.
+Maintenance simple.
+Scalabilité naturelle.
+Logs exploitables.
+
+Tu passes d’un patchwork PHP à une architecture cohérente.
+
+
+
+
