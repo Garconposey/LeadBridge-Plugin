@@ -1,7 +1,7 @@
 # LeadBridge Plugin – Notes de projet
 
 ## Architecture
-Plugin WordPress complet dans `C:\Users\auxil\Downloads\Vibe Coding\leadbridge\`
+Plugin WordPress complet dans `C:\Users\leadbridge\`
 - `leadbridge.php` – Point d'entrée, constantes, activation/désactivation, cron schedule
 - `includes/class-leadbridge-config.php` – CRUD config en DB (LEADBRIDGE_OPTION), 6 templates sites
 - `includes/class-leadbridge-logger.php` – JSONL dans `uploads/leadbridge-logs/leadbridge.log`
